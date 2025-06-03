@@ -45,6 +45,6 @@ If libreoffice is installed, conveniently edit parmFile.csv with the command
 
     libreoffice --calc parmFile.csv
 
-In the libreoffice dialog choose "Space" under "Separated by" and choose "Merge delimiters".
+In the libreoffice import dialog choose "Space" under "Separated by" and choose "Merge delimiters".
 
 Copyright: Johan Roenby, 2025

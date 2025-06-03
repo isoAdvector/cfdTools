@@ -1,17 +1,11 @@
-scanName damBreakScan
-    baseCase damBreak
-  water.nu ddtSchemes.default
-constant/transportProperties system/fvSchemes
-1 Euler
-1-01 "CrankNicolson  0.9"
-1-02 "CrankNicolson  0.7"
-1-03 "CrankNicolson   0.6"
-                1-04 "CrankNicolson  0.5"
-1-05 backward
-
-   1-05     backward
-
-
- 
-
-     
+scanName                      damBreakScan
+baseCase                      damBreak
+water.nu                      ddtSchemes.default
+constant/transportProperties  system/fvSchemes
+1                             Euler
+1-01                          "CrankNicolson  0.9"
+1-02                          "CrankNicolson  0.7"
+1-03                          "CrankNicolson   0.6"
+1-04                          "CrankNicolson  0.5"
+1-05                          backward
+1-05                          backward
