@@ -1,0 +1,50 @@
+Usage: parmScanner [OPTIONS]
+
+Description:
+  Script to generate and run parameter scans based on an OpenFOAM base case.
+
+Options:
+  -file <parmFile>      Specify the name of the file containing the list of cases to generate.
+  -exec <case_script>   Specify the script to be executed in each case after creation.
+  -parallel             Run cases in parallel (background). Default: sequential execution.
+  -maxJobs <N>          Maximum number of cases to run simultaneously (only with -parallel).
+  -help                 Display this help message and exit.
+
+Example of usage only creating cases (not running them):
+
+  parmScanner -file parmFile.csv
+
+Example of usage creating and running cases in one go:
+
+  parmScanner -file parmFile.csv -exec Allrun -parallel -maxJobs 4
+
+Example of parmFile.csv format:
+
+    scanName                      myParmScan                                      
+    baseCase                      myBaseCase                                      
+    water.nu                      ddtSchemes.default          nx                  
+    constant/transportProperties  system/fvSchemes            system/blockMeshDict
+    1e00                          Euler                       20                  
+    1-01                          "CrankNicolson      0.9"    20                 
+    1-02                          "CrankNicolson      0.7"    40                 
+    1-03                          "CrankNicolson      0.6"    40                 
+    1-04                          "CrankNicolson      0.5"    80                 
+
+Notes:
+Uses foamDictionary to set parameters in cases so OpenFOAM must be sourced for the script to work.
+If a scan is named myScan, cases will be placed in myScan/0000 myScan/0001, myScan/0002, ...
+The scan can be deleted by executing:
+
+    rm -rf myScan
+
+For numbered list of all cases and their parameter values execute:
+
+    cat myScan/parmScannerParms
+
+If libreoffice is installed, conveniently edit parmFile.csv with the command
+
+    libreoffice --calc parmFile.csv
+
+In the libreoffice dialog choose "Space" under "Separated by" and choose "Merge delimiters".
+
+Copyright: Johan Roenby, 2025

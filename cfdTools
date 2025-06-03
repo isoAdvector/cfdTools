@@ -1,0 +1,252 @@
+#!/bin/bash
+
+# Make a sequence of copies of baseCase and change one or more parameters in the
+# setup files of each case according the the values in a parameter file.
+#
+# Example of the parameter file format:
+#
+# scanName                      myParmScan
+# baseCase                      myBaseCase
+# water.nu                      ddtSchemes.default          nx
+# constant/transportProperties  system/fvSchemes            system/blockMeshDict
+# 1e00                          Euler                       20
+# 1-01                          "CrankNicolson      0.9"    20
+# 1-02                          "CrankNicolson      0.7"    40
+# 1-03                          "CrankNicolson      0.6"    40
+# 1-04                          "CrankNicolson      0.5"    80
+#
+# First line is the name of the scan - a dir will be created.
+# Second line is the name of the base case from which scan cases will be derived.
+# Third line contains white space separated parameter names (use "." for subDicts).
+# Fourth line are the files in which the parameters are found.
+# Subsequent lines specify parameters (use double quotation if to include white space)
+#
+# Copyright Johan Roenby, 2025
+#
+# Todo:
+# -Make robust against variations in parmFile format
+# -Enable different delimiters
+# -Enable sending to queue system
+
+parmScanner() {
+
+    # If no arguments print help
+    local input_file="$1"
+    if [[ $# -eq 0 ]]; then
+        parmScanner -help
+        return 1
+    fi
+
+    # Base case to be copied and modified to create test matrix
+    baseCase=baseCase
+    # Name of file containing list of parameters to change and values
+    parmScanFile=parmFile
+    # Prefix name of created numbered test cases
+    scanName=parmScan
+    # Script to execute in each created case
+    execScript=
+    # Whether to run cases in parallel (background)
+    local runParallel=false
+    # Max number of simultaneously running cases
+    maxJobs=0  # 0 means no limit
+
+    # Parse command line arguments
+    while [[ $# -gt 0 ]]; do
+        key="$1"
+        case $key in
+            -file)
+                parmScanFile="$2"
+                shift
+                shift
+                ;;
+            -exec)
+                execScript="$2"
+                shift
+                shift
+                ;;
+            -parallel)
+                runParallel=true
+                shift
+                ;;
+            -maxJobs)
+                maxJobs="$2"
+                shift
+                shift
+                ;;
+            -help)
+                # Print documentation text from README
+                local script_path="${BASH_SOURCE[0]}"
+                local script_dir
+                script_dir="$(cd "$(dirname "$script_path")" && pwd)"
+                cat $script_dir/README
+                return 0
+                ;;
+            *)
+                echo "Unknown option: $1"
+                return 0
+                ;;
+        esac
+    done
+
+    # Reading scan name from 1st line of parm file and making scan directory
+    scanNameString=($(sed -n '1p' $parmScanFile))
+    scanName=${scanNameString[1]}
+    # Making dir for scan cases
+    mkdir -p $scanName
+
+    # Reading baseCase name from 2nd line of parm file and copying case into scan dir
+    baseCaseString=($(sed -n '2p' $parmScanFile))
+    baseCase=${baseCaseString[1]}
+    cp -r $baseCase ${scanName}/${baseCase}.copy
+    cp $parmScanFile ${scanName}/${parmScanFile}.copy
+
+    # Reading list of parameters to change
+    parmNames=($(sed -n '3p' $parmScanFile))
+    # For each parameter, which case file is it found in?
+    parmFiles=($(sed -n '4p' $parmScanFile))
+    # Length of list of new cases to be generated (ignore empty lines including trailing ones)
+    nCases=$(($(grep -v '^[[:space:]]*$' "$parmScanFile" | wc -l) - 4))
+    echo nCases: $nCases
+    # Number of digits for padding numbers in new case names
+    # nDigits=$(( ${#nCases} + 2 ))
+    # Note: The above did not work as intended. If starting with 6 cases and then
+    # later expanding to 11, 6 first will be recreated with an extra 0 in name.
+    # Using instead four digits hardcoded assuming never more than 10000 cases:
+    nDigits=4
+
+    # Running through cases first to generate them and then execute script
+    # if needed
+    casesCreated=false
+    for ((j=0; j<2; j++)); do #Creating cases in 1st pass, executing them in 2nd
+        #Line to read in parm file 
+        parmLineNumber=4
+        for ((i=0; i<nCases; i++)); do
+            caseNumber=$(printf "%0${nDigits}d" "$i")
+            # Go to next parameter line in parm file ignoring pure white space lines
+            while :; do
+                parmLineNumber=$((parmLineNumber + 1))
+                caseParmString=$(sed -n "${parmLineNumber}p" "$parmScanFile")
+
+                # If the line is NOT only whitespace, stop the loop
+                if [[ ! "$caseParmString" =~ ^[[:space:]]*$ ]]; then
+                    break
+                fi
+            done
+            #Read case parm line treating content of double quotation as single field
+            IFS=$'\n' read -r -d '' -a caseParms < <(echo "$caseParmString" | xargs -n 1)
+            #Name of current case directory
+            caseName=${scanName}/${caseNumber}
+
+            # Creating case that do not already exist
+            if [ ! -d "$caseName" ] && [ "$casesCreated" = false ]; then
+                echo Creating case $caseName
+                cp -r $baseCase $caseName
+                # Writing case parameters to parmScannerParms file in case dir
+                caseParmFile=$caseName/parmScannerParms
+                echo -n "$caseName: " >> $caseParmFile
+                # Running through all parameters to be changed in specific case
+                for m in ${!parmNames[*]}
+                do
+                    parmName=${parmNames[$m]}
+                    parmFile=${parmFiles[$m]}
+                    parmValue=${caseParms[$m]}
+                    echo -n "    $parmName: $parmValue" >> $caseParmFile
+                    # Changing parameter in specified file
+                    foamDictionary -disableFunctionEntries -entry "${parmName}" -set "${parmValue}" ${caseName}/${parmFile} > /dev/null 2>&1
+                done
+                # Adding new line to caseParmFile
+                echo >> $caseParmFile
+                # Writing case parms to terminal
+                cat $caseParmFile
+                # Adding case numer and parms to parmScannerParms in scan dir
+                cat $caseParmFile >> $scanName/parmScannerParms
+            fi
+
+            # Running execScript in case if specified by user
+            if [ "$casesCreated" = true ] && [ -n "$execScript" ]; then
+                # Running several jobs simultaneously in the background if specified by the user
+                if [ "$runParallel" = true ]; then
+                    cd "$caseName"
+                    echo "Running script $execScript in $caseName"
+                    ./$execScript &
+                    cd - > /dev/null
+                    # Limiting the number of simultaneous background jobs to maxJobs if specified by the user
+                    if (( maxJobs > 0 )); then
+                        while (( $(jobs -rp | wc -l) >= maxJobs )); do
+                            echo "Reached max parallel jobs ($maxJobs). Waiting..."
+                            sleep 10
+                        done
+                    fi
+                else # Run jobs one at a time in the foreground
+                    cd "$caseName"
+                    echo "Running script $execScript in $caseName"
+                    ./$execScript
+                    cd - > /dev/null
+                fi
+            fi
+        done
+        casesCreated=true
+    done
+}
+
+
+# Function to align columns in parameter file for readability
+# Known limitation: Currently does not respect double quotation
+
+columnAlign() {
+    local input_file="$1"
+    if [ $# -ne 1 ]; then
+        echo "Usage: columnAlign <filename>"
+        return 1
+    fi
+
+    if [ ! -f "$input_file" ]; then
+        echo "Error: File $input_file not found"
+        return 1
+    fi
+
+    local temp_file
+    temp_file=$(mktemp)
+    local max_cols=0
+    local -a max_widths
+
+    # First pass: Determine the number of columns and their maximum widths
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        local col_values
+        read -ra col_values <<< "$line"
+        local cols=${#col_values[@]}
+        (( cols > max_cols )) && max_cols=$cols
+        for ((i=0; i<cols; i++)); do
+            local width=${#col_values[$i]}
+            if [ "${max_widths[$i]:-0}" -lt "$width" ]; then
+                max_widths[$i]=$width
+            fi
+        done
+    done < "$input_file"
+
+    # Second pass: Format the output with proper spacing
+    while IFS= read -r line; do
+        if [ -z "$line" ]; then
+            echo "" >> "$temp_file"
+            continue
+        fi
+        local col_values
+        read -ra col_values <<< "$line"
+        local formatted_line=""
+        for ((i=0; i<${#col_values[@]}; i++)); do
+            local value=${col_values[$i]}
+            formatted_line+="$value"
+            if [ $i -lt $((max_cols - 1)) ] && [ $i -lt $((${#col_values[@]} - 1)) ]; then
+                local padding=$((max_widths[$i] - ${#value} + 2))
+                for ((j=0; j<padding; j++)); do
+                    formatted_line+=" "
+                done
+            fi
+        done
+        echo "$formatted_line" >> "$temp_file"
+    done < "$input_file"
+
+    mv "$temp_file" "$input_file"
+    echo "File $input_file has been aligned successfully."
+}

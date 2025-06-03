@@ -1,0 +1,5 @@
+#!/bin/bash
+
+source ../cfdTools
+
+parmScanner -file parmFile.csv -exec Allrun -parallel -maxJobs 2
