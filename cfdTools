@@ -10,10 +10,10 @@
 # water.nu                      ddtSchemes.default          nx
 # constant/transportProperties  system/fvSchemes            system/blockMeshDict
 # 1e00                          Euler                       20
-# 1-01                          "CrankNicolson      0.9"    20
-# 1-02                          "CrankNicolson      0.7"    40
-# 1-03                          "CrankNicolson      0.6"    40
-# 1-04                          "CrankNicolson      0.5"    80
+# 1e-01                         "CrankNicolson      0.9"    20
+# 1e-02                         "CrankNicolson      0.7"    40
+# 1e-03                         "CrankNicolson      0.6"    40
+# 1e-04                         "CrankNicolson      0.5"    80
 #
 # First line is the name of the scan - a dir will be created.
 # Second line is the name of the base case from which scan cases will be derived.
