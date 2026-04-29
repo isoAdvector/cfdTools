@@ -1,5 +1,7 @@
 #!/bin/bash
 
+_CFDTOOLS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Make a sequence of copies of baseCase and change one or more parameters in the
 # setup files of each case according the the values in a parameter file.
 #
@@ -74,11 +76,7 @@ parmScanner() {
                 shift
                 ;;
             -help)
-                # Print documentation text from README
-                local script_path="${BASH_SOURCE[0]}"
-                local script_dir
-                script_dir="$(cd "$(dirname "$script_path")" && pwd)"
-                cat $script_dir/README
+                cat "$_CFDTOOLS_DIR/README"
                 return 0
                 ;;
             *)
