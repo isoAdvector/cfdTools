@@ -38,11 +38,13 @@ _CFDTOOLS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # print one entry's value (get), or print the whole file with one value replaced
 # (set, with the new value in $newValue).
 #
-#   _dictScan <list|get|set> <file> [entry.path]
+#   _dictScan <list|get|set> <file> [entry.path] [add]
 #
 # Entries are addressed by their full path from the top of the file, with sub-dicts
 # separated by ".", e.g. "nz", "PIMPLE.nCorrectors", "solvers.p_rgh.tolerance".
-# get and set require the path to match exactly one entry.
+# A path matching several entries is refused. get also refuses one matching none;
+# set adds the entry in that case if a non-empty add argument was given, and exits
+# 2 to say so.
 #
 # Dictionary syntax is described by six tokens, so supporting another brace-and-
 # terminator dialect is a one-line addition to the case statement. Formats that
@@ -70,11 +72,24 @@ _dictScan() (
     # white space of any kind, so entries and braces may be split over lines or
     # packed onto one.
     BEGIN { value = ENVIRON["newValue"]; lc = length(lcom); bo = length(bopen) }
-    # Position of the last "." in t, i.e. the separator between parent path and key
-    function lastDot(t,   p, i) {
-        p = 0
-        for (i = 1; i <= length(t); i++) if (substr(t, i, 1) == ".") p = i
+    # Position of the last "." in t that separates a parent path from a key. Dots
+    # inside a quoted name, as in solvers."alpha.water.*".tolerance, are part of
+    # the name and are skipped.
+    function lastDot(t,   p, i, q, ch) {
+        p = 0; q = ""
+        for (i = 1; i <= length(t); i++) {
+            ch = substr(t, i, 1)
+            if (q != "") { if (ch == q) q = "" }
+            else if (ch == "\"") q = ch
+            else if (ch == ".") p = i
+        }
         return p
+    }
+    # The dotted path of the dictionary enclosing depth d, "" at the top level
+    function pathTo(d,   j, r) {
+        r = ""
+        for (j = 1; j <= d; j++) r = r path[j] (j < d ? "." : "")
+        return r
     }
     { s = s $0 "\n" }
     END {
@@ -103,45 +118,33 @@ _dictScan() (
                 path[++depth] = nTok ? substr(s, kS, kE - kS + 1) : ""; nTok = 0; i++
             } else if (c == dclose) {                             # sub-dict closes
                 if (depth) {
-                    here = ""
-                    for (d = 1; d <= depth; d++) here = here path[d] (d < depth ? "." : "")
-                    if (!(here in tailPos)) { tailPos[here] = i - 1; tailDepth[here] = depth }
                     delete path[depth--]
                     # A dictionary holding only sub-dicts, as fvSchemes does, has no
                     # entry to append after, so remember the end of each one as a
                     # fallback insertion point for the dictionary enclosing it
-                    outer = ""
-                    for (d = 1; d <= depth; d++) outer = outer path[d] (d < depth ? "." : "")
+                    outer = pathTo(depth)
                     endPos[outer] = i; endDepth[outer] = depth
                 }
                 nTok = 0; i++
             } else if (c == term) {                               # entry ends
                 if (nTok) {
-                    parent = ""
-                    for (d = 1; d <= depth; d++) parent = parent path[d] (d < depth ? "." : "")
-                    thisKey = substr(s, kS, kE - kS + 1)
-                    full = (depth ? parent "." : "") thisKey
-                    # Remember where the last entry of each dict ends, so a new one
-                    # can be appended after it, and at which column its value sits,
-                    # so an added entry lines up with the entries around it
-                    tailPos[parent] = i; tailDepth[parent] = depth
-                    ls = kS; while (ls > 1 && substr(s, ls - 1, 1) != "\n") ls--
-                    vs2 = kE + 1
-                    while (vs2 <= i && substr(s, vs2, 1) ~ /[ \t]/) vs2++
-                    tailInd[parent] = kS - ls; tailCol[parent] = vs2 - ls
+                    parent = pathTo(depth)
+                    full = (depth ? parent "." : "") substr(s, kS, kE - kS + 1)
+
+                    if (mode == "set") {
+                        # Where the last entry of each dict ends, so a new one can be
+                        # appended after it, and the column its value sits in, so an
+                        # added entry lines up with the entries around it
+                        tailPos[parent] = i; tailDepth[parent] = depth
+                        ls = kS; while (ls > 1 && substr(s, ls - 1, 1) != "\n") ls--
+                        vs2 = kE + 1
+                        while (vs2 <= i && substr(s, vs2, 1) ~ /[ \t]/) vs2++
+                        tailInd[parent] = kS - ls; tailCol[parent] = vs2 - ls
+                    }
                     # The FoamFile header is noise when browsing, so it is left out
                     # of listings; it can still be read and set by naming it
-                    if (mode ~ /^list/ && substr(full, 1, 9) != "FoamFile.") {
-                        if (mode == "listv") {
-                            a = kE + 1; b = i - 1
-                            while (a <= b && substr(s, a, 1) ~ /[ \t\r\n]/) a++
-                            while (b >= a && substr(s, b, 1) ~ /[ \t\r\n]/) b--
-                            v = (a > b) ? "" : substr(s, a, b - a + 1)
-                            gsub(/[ \t\r\n]+/, " ", v)     # one line, for display
-                            print full "\t" v
-                        } else print full
-                    }
-                    else if (full == target) { matches++; vS = kE + 1; vE = i - 1 }
+                    if (mode == "list" && substr(full, 1, 9) != "FoamFile.") print full
+                    if (full == target) { matches++; vS = kE + 1; vE = i - 1 }
                 }
                 nTok = 0; i++
             } else {                                              # ordinary token
@@ -154,7 +157,7 @@ _dictScan() (
                 i = j
             }
         }
-        if (mode ~ /^list/) exit 0
+        if (mode == "list") exit 0
 
         # Adding a missing entry when asked for. The path given is taken at face
         # value: if the same name exists in some sub-dict the new entry is still
@@ -212,12 +215,8 @@ _dictScan() (
 
 # Print every entry path in a dictionary file
 #
-#   listDictEntries [-v] <file>
-#
-# With -v each path is followed by a tab and the entry's value.
-listDictEntries() (
-    [ "$1" = "-v" ] && { shift; _dictScan listv "$1"; } || _dictScan list "$1"
-)
+#   listDictEntries <file>
+listDictEntries() ( _dictScan list "$1" )
 
 
 # Print the value of one entry
@@ -229,8 +228,9 @@ getDictEntry() (
 )
 
 
-# Set one entry, rewriting only the value and leaving every other byte of the file
-# untouched (comments, formatting, floating point precision).
+# Set one entry, rewriting only the value and leaving the rest of the file untouched
+# (comments, formatting, floating point precision). A file that ends without a
+# newline gains one, which is the only byte the parser does not preserve.
 #
 #   setDictEntry [-add] <file> <entry.path> <value>
 #
@@ -247,10 +247,16 @@ setDictEntry() (
     tmp="$1.setDictEntry.$$"
     newValue="$3" _dictScan set "$1" "$2" "$addMissing" > "$tmp"
     status=$?
-    if [ $status -le 2 ] && [ -s "$tmp" ]; then
-        cat "$tmp" > "$1"   # preserves the original file mode and ownership
+    if [ $status -eq 0 ] || [ $status -eq 2 ]; then
+        # Writing through cat rather than mv keeps the file's mode and ownership.
+        # A read-only file fails here, and that must not be reported as a success.
+        if cat "$tmp" > "$1"; then
+            rm -f "$tmp"
+            return $status
+        fi
+        echo "    could not write $1" >&2
         rm -f "$tmp"
-        return $status
+        return 1
     fi
     rm -f "$tmp"
     echo "    in file: $1" >&2
@@ -263,7 +269,8 @@ setDictEntry() (
 dictator() {
     if [ "$1" = "-help" ]; then
         cat <<'HELP'
-Copyright (C) 2026 by Johan Roenby, STROMNING.
+Inspect and set values in OpenFOAM dictionaries with auto-completion. 
+Copyright (C) 2026 Johan Roenby, STROMNING.
 Usage: dictator <dictFile> <parameter> [value]
 
   Examples:
