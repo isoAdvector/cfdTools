@@ -1,7 +1,35 @@
+cfdTools - shell functions for setting up and running OpenFOAM parameter studies
+
+Usage:
+
+    . /path/to/cfdTools
+
+  Put that line in ~/.bashrc to have the functions and the dictator tab completion
+  available in every terminal. cfdTools must be sourced from bash: it uses bash arrays,
+  which other shells index differently, so sourcing it from zsh or sh is refused rather
+  than silently misbehaving. No OpenFOAM installation is required.
+
+Contents:
+
+    parmScanner       generate, and optionally run, a matrix of cases from a base case
+    dictator          inspect and set dictionary parameters, with tab completion
+    setDictEntry      set the value of one dictionary entry
+    getDictEntry      print the value of one dictionary entry
+    listDictEntries   print every entry path in a dictionary file
+    columnAlign       align the columns of a parameter file for readability
+
+  "parmScanner -help" prints this file.
+
+
+================================================================================
+parmScanner
+================================================================================
+
 Usage: parmScanner [OPTIONS]
 
 Description:
-  Script to generate and run parameter scans based on an OpenFOAM base case.
+  Copies a base case once per row of a parameter file, sets the parameters of each copy,
+  and optionally runs a script in each of them.
 
 Options:
   -file <parmFile>      Specify the name of the file containing the list of cases to generate.
@@ -20,76 +48,145 @@ Example of usage creating and running cases in one go:
 
 Example of parmFile.csv format:
 
-    scanName                      myParmScan                                      
-    baseCase                      myBaseCase                                      
-    water.nu                      ddtSchemes.default          nx                  
+    scanName                      myParmScan
+    baseCase                      myBaseCase
+    water.nu                      ddtSchemes.default          nx
     constant/transportProperties  system/fvSchemes            system/blockMeshDict
-    1e00                          Euler                       20                  
-    1e-01                         "CrankNicolson      0.9"    20                 
-    1e-02                         "CrankNicolson      0.7"    40                 
-    1e-03                         "CrankNicolson      0.6"    40                 
-    1e-04                         "CrankNicolson      0.5"    80                 
+    1e00                          Euler                       20
+    1e-01                         "CrankNicolson      0.9"    20
+    1e-02                         "CrankNicolson      0.7"    40
+    1e-03                         "CrankNicolson      0.6"    40
+    1e-04                         "CrankNicolson      0.5"    80
+
+  Line 1 names the scan, and hence the directory the cases are placed in.
+  Line 2 names the base case to copy.
+  Line 3 lists the parameters to vary, as full entry paths (see setDictEntry below).
+  Line 4 gives the file each parameter lives in, relative to the case directory.
+  Each following line is one case. Use double quotes for values containing spaces.
 
 Notes:
-cfdTools must be sourced from bash. It uses bash arrays, which other shells index
-differently, so sourcing it from zsh or sh is refused rather than silently misbehaving.
-Parameters are set with setDictEntry (documented below), which edits only the line holding
-the entry and needs no OpenFOAM installation.
-If a scan is named myScan, cases will be placed in myScan/0000 myScan/0001, myScan/0002, ...
+  If a scan is named myScan, cases are placed in myScan/0000, myScan/0001, myScan/0002, ...
 
-A case is run at most once. When -exec is used, parmScanner creates log.<execScript> in the
-case as the script is launched, and skips any case in which that file already exists. A scan
-can therefore safely be re-run to add new cases: existing cases are left untouched, whether
-they finished, are still running or crashed. To re-run a case, delete its log.<execScript>.
-The scan can be deleted by executing:
+  A case is run at most once. When -exec is used, parmScanner creates log.<execScript> in
+  the case as the script is launched, and skips any case in which that file already exists.
+  A scan can therefore safely be re-run to add new cases: existing cases are left untouched,
+  whether they finished, are still running or crashed. To re-run a case, delete its
+  log.<execScript>.
+
+  Parameters are set with setDictEntry, so a case that cannot be given the requested value
+  aborts the scan rather than silently keeping the base case value.
+
+  The scan can be deleted by executing:
 
     rm -rf myScan
 
-For numbered list of all cases and their parameter values execute:
+  For a numbered list of all cases and their parameter values execute:
 
     cat myScan/parmScannerParms
 
-If libreoffice is installed, conveniently edit parmFile.csv with the command
+  If libreoffice is installed, conveniently edit parmFile.csv with the command
 
     libreoffice --calc parmFile.csv
 
-In the libreoffice import dialog choose "Space" under "Separated by" and choose "Merge delimiters".
+  In the libreoffice import dialog choose "Space" under "Separated by" and choose
+  "Merge delimiters". Use columnAlign afterwards to tidy the column widths.
 
 
-Usage: setDictEntry [-syntax <name>] <file> <entry.path> <value>
+================================================================================
+dictator, setDictEntry, getDictEntry, listDictEntries
+================================================================================
+
+Usage: dictator         <file> [<entry.path> [<value>]]
+       setDictEntry     <file> <entry.path> <value>
+       getDictEntry     <file> <entry.path>
+       listDictEntries  <file>
 
 Description:
-  Set a single entry in a dictionary file. Only the line holding the entry is rewritten;
-  every other byte of the file is left untouched, so comments, formatting, blank lines and
-  full floating point precision are all preserved.
+  setDictEntry sets a single entry in a dictionary file. Only the value is rewritten; every
+  other byte of the file is left untouched, so comments, formatting, blank lines and full
+  floating point precision are all preserved. getDictEntry prints one entry's value and
+  listDictEntries prints every entry path in a file. All three share one parser, which reads
+  the dictionary as a character stream, so entries and sub-dicts may be split across lines
+  or packed onto one, separated by spaces, tabs or nothing at all.
 
-  The entry is addressed by its full path from the top of the file, with sub-dicts separated
-  by "." :
+  dictator is the interactive front end, with tab completion at every position:
+
+    dictator sys[TAB]                            -> system/
+    dictator system/cont[TAB]                    -> system/controlDict
+    dictator system/controlDict [TAB][TAB]       -> lists every parameter path
+    dictator system/controlDict endT[TAB]        -> endTime
+    dictator system/controlDict endTime [TAB]    -> fills in the current value
+    dictator system/controlDict endTime 12       -> sets it to 12
+
+  With two arguments dictator prints a value, with three it sets one.
+
+  Entries are addressed by their full path from the top of the file, with sub-dicts
+  separated by "." :
 
     setDictEntry system/blockMeshDict nz 160
     setDictEntry system/fvSchemes ddtSchemes.default "CrankNicolson 0.9"
     setDictEntry system/fvSolution 'solvers."alpha.water.*".nAlphaSubCycles' 4
 
-  The path must match exactly one entry. If it matches none, the paths of any entries with
-  the same name are suggested; if it matches several, nothing is written. In both cases the
-  file is left unchanged and a non-zero status is returned:
+  The path must match exactly one entry. If it matches none, or several, nothing is written,
+  the file is left unchanged and a non-zero status is returned:
 
     $ setDictEntry system/fvSchemes default Euler
-    setDictEntry: entry "default" not found
-                  did you mean "ddtSchemes.default" ?
-                  did you mean "gradSchemes.default" ?
-                  ...
+    "default" not found
+        in file: system/fvSchemes
 
-  Entries appearing inside // or /* */ comments are ignored.
+  A name is not searched for in the sub-dicts below it: "default" above names a top-level
+  entry, not ddtSchemes.default. Tab completion is the way to find the path wanted.
 
-  Only existing entries are modified. Adding and removing entries is deliberately not
-  supported, so the base case documents what a scan can vary.
+  Entries appearing inside // or /* */ comments are ignored, as are #include and other
+  #directive lines.
 
-  -syntax <name>  Dictionary dialect. Only "openfoam" (the default) is currently defined:
-                  entries "key value;" and sub-dicts "name { ... }". The dialect is
-                  described by six tokens (entry terminator, sub-dict open and close, line
-                  comment, block comment open and close), so another brace-and-terminator
-                  format is a one-line addition. Formats that express nesting through
-                  indentation, such as YAML, do not fit this model.
+  dictator adds a parameter that does not exist yet, placing it after the last entry of
+  the dictionary named in the path and indenting it to match:
 
-Copyright: Johan Roenby, 2025
+    dictator system/controlDict.run tis 5      ->  Added tis = 5
+    dictator system/controlDict.run endTime 12 ->  Set   endTime = 12
+
+  The path is taken at face value, so "dictator constant/transportProperties rho 10" adds
+  a top-level rho even though water.rho and air.rho exist. Check that a new entry landed
+  where you intended; the Added/Set distinction in the message is there to make an
+  unintended addition, such as a mistyped name, easy to spot. The dictionary named in the
+  path must already exist: "dictator file noSuchDict.x 1" is refused.
+
+  setDictEntry does NOT add by default, and reports a missing entry as an error instead.
+  This is what parmScanner relies on, so that a mistyped parameter name in a parmFile
+  aborts the scan rather than quietly adding a useless entry to every case. Pass -add to
+  setDictEntry for dictator's behaviour; it returns 2 when it added and 0 when it replaced.
+
+  Removing entries is not supported.
+
+  The dictionary dialect is selected by the variable dictSyntax. Only "openfoam" (the
+  default) is currently defined: entries "key value;" and sub-dicts "name { ... }". The
+  dialect is described by six tokens (entry terminator, sub-dict open and close, line
+  comment, block comment open and close), so another brace-and-terminator format is a
+  one-line addition. Formats that express nesting through indentation, such as YAML, do
+  not fit this model.
+
+
+================================================================================
+columnAlign
+================================================================================
+
+Usage: columnAlign <filename>
+
+Description:
+  Pads the columns of a white space separated file so they line up, and rewrites the file
+  in place. Intended for keeping a parmFile.csv readable after rows have been added or
+  edited.
+
+  Known limitation: does not respect double quotation, so values containing spaces are
+  treated as several columns.
+
+
+Copyright (C) 2025-2026 Johan Roenby, STROMNING
+
+cfdTools is free software: you can redistribute it and/or modify it under the terms of
+the GNU General Public License as published by the Free Software Foundation, either
+version 3 of the License, or (at your option) any later version. It is distributed in
+the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the file LICENSE,
+or <https://www.gnu.org/licenses/>, for details.
