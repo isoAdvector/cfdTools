@@ -31,8 +31,16 @@ Example of parmFile.csv format:
     1e-04                         "CrankNicolson      0.5"    80                 
 
 Notes:
-Uses foamDictionary to set parameters in cases so OpenFOAM must be sourced for the script to work.
+cfdTools must be sourced from bash. It uses bash arrays, which other shells index
+differently, so sourcing it from zsh or sh is refused rather than silently misbehaving.
+Parameters are set with setDictEntry (documented below), which edits only the line holding
+the entry and needs no OpenFOAM installation.
 If a scan is named myScan, cases will be placed in myScan/0000 myScan/0001, myScan/0002, ...
+
+A case is run at most once. When -exec is used, parmScanner creates log.<execScript> in the
+case as the script is launched, and skips any case in which that file already exists. A scan
+can therefore safely be re-run to add new cases: existing cases are left untouched, whether
+they finished, are still running or crashed. To re-run a case, delete its log.<execScript>.
 The scan can be deleted by executing:
 
     rm -rf myScan
@@ -46,5 +54,42 @@ If libreoffice is installed, conveniently edit parmFile.csv with the command
     libreoffice --calc parmFile.csv
 
 In the libreoffice import dialog choose "Space" under "Separated by" and choose "Merge delimiters".
+
+
+Usage: setDictEntry [-syntax <name>] <file> <entry.path> <value>
+
+Description:
+  Set a single entry in a dictionary file. Only the line holding the entry is rewritten;
+  every other byte of the file is left untouched, so comments, formatting, blank lines and
+  full floating point precision are all preserved.
+
+  The entry is addressed by its full path from the top of the file, with sub-dicts separated
+  by "." :
+
+    setDictEntry system/blockMeshDict nz 160
+    setDictEntry system/fvSchemes ddtSchemes.default "CrankNicolson 0.9"
+    setDictEntry system/fvSolution 'solvers."alpha.water.*".nAlphaSubCycles' 4
+
+  The path must match exactly one entry. If it matches none, the paths of any entries with
+  the same name are suggested; if it matches several, nothing is written. In both cases the
+  file is left unchanged and a non-zero status is returned:
+
+    $ setDictEntry system/fvSchemes default Euler
+    setDictEntry: entry "default" not found
+                  did you mean "ddtSchemes.default" ?
+                  did you mean "gradSchemes.default" ?
+                  ...
+
+  Entries appearing inside // or /* */ comments are ignored.
+
+  Only existing entries are modified. Adding and removing entries is deliberately not
+  supported, so the base case documents what a scan can vary.
+
+  -syntax <name>  Dictionary dialect. Only "openfoam" (the default) is currently defined:
+                  entries "key value;" and sub-dicts "name { ... }". The dialect is
+                  described by six tokens (entry terminator, sub-dict open and close, line
+                  comment, block comment open and close), so another brace-and-terminator
+                  format is a one-line addition. Formats that express nesting through
+                  indentation, such as YAML, do not fit this model.
 
 Copyright: Johan Roenby, 2025
