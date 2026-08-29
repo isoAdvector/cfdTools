@@ -4,18 +4,22 @@ Usage:
 
     . /path/to/cfdTools
 
-  Put that line in ~/.bashrc to have the functions and the dictator tab completion
-  available in every terminal. cfdTools must be sourced from bash: it uses bash arrays,
-  which other shells index differently, so sourcing it from zsh or sh is refused rather
-  than silently misbehaving. No OpenFOAM installation is required.
+  Put that line in ~/.bashrc to have the functions available in every terminal.
+  cfdTools must be sourced from bash: it uses bash arrays, which other shells index
+  differently, so sourcing it from zsh or sh is refused rather than silently
+  misbehaving. No OpenFOAM installation is required.
+
+  parmScanner sets each case's parameters with setDictEntry, which lives in dictator:
+
+    https://github.com/isoAdvector/dictator
+
+  Source dictator before cfdTools, or clone it beside or below this repository and
+  cfdTools will find and source it itself. Without it cfdTools refuses to load and
+  says so.
 
 Contents:
 
     parmScanner       generate, and optionally run, a matrix of cases from a base case
-    dictator          inspect and set dictionary parameters, with tab completion
-    setDictEntry      set the value of one dictionary entry
-    getDictEntry      print the value of one dictionary entry
-    listDictEntries   print every entry path in a dictionary file
     columnAlign       align the columns of a parameter file for readability
 
   "parmScanner -help" prints this file.
@@ -93,78 +97,27 @@ Notes:
 
 
 ================================================================================
-dictator, setDictEntry, getDictEntry, listDictEntries
+setDictEntry, getDictEntry, listDictEntries
 ================================================================================
 
-Usage: dictator         <file> [<entry.path> [<value>]]
-       setDictEntry     <file> <entry.path> <value>
-       getDictEntry     <file> <entry.path>
-       listDictEntries  <file>
+  These live in dictator, a separate tool:
 
-Description:
-  setDictEntry sets a single entry in a dictionary file. Only the value is rewritten; every
-  other byte of the file is left untouched, so comments, formatting, blank lines and full
-  floating point precision are all preserved. getDictEntry prints one entry's value and
-  listDictEntries prints every entry path in a file. All three share one parser, which reads
-  the dictionary as a character stream, so entries and sub-dicts may be split across lines
-  or packed onto one, separated by spaces, tabs or nothing at all.
+    https://github.com/isoAdvector/dictator
 
-  dictator is the interactive front end, with tab completion at every position:
-
-    dictator sys[TAB]                            -> system/
-    dictator system/cont[TAB]                    -> system/controlDict
-    dictator system/controlDict [TAB][TAB]       -> lists every parameter path
-    dictator system/controlDict endT[TAB]        -> endTime
-    dictator system/controlDict endTime [TAB]    -> fills in the current value
-    dictator system/controlDict endTime 12       -> sets it to 12
-
-  With two arguments dictator prints a value, with three it sets one.
-
-  Entries are addressed by their full path from the top of the file, with sub-dicts
-  separated by "." :
+  parmScanner uses setDictEntry to set each case's parameters. Entries are addressed
+  by their full path from the top of the file, with sub-dicts separated by "." :
 
     setDictEntry system/blockMeshDict nz 160
     setDictEntry system/fvSchemes ddtSchemes.default "CrankNicolson 0.9"
     setDictEntry system/fvSolution 'solvers."alpha.water.*".nAlphaSubCycles' 4
 
-  The path must match exactly one entry. If it matches none, or several, nothing is written,
-  the file is left unchanged and a non-zero status is returned:
+  Only the value is rewritten; every other byte of the file is left untouched, so
+  comments, formatting and full floating point precision are preserved. A path that
+  matches no entry, or several, writes nothing and returns non-zero, which is what
+  makes a mistyped parameter name abort a scan rather than quietly do nothing.
 
-    $ setDictEntry system/fvSchemes default Euler
-    "default" not found
-        in file: system/fvSchemes
-
-  A name is not searched for in the sub-dicts below it: "default" above names a top-level
-  entry, not ddtSchemes.default. Tab completion is the way to find the path wanted.
-
-  Entries appearing inside // or /* */ comments are ignored, as are #include and other
-  #directive lines.
-
-  dictator adds a parameter that does not exist yet, placing it after the last entry of
-  the dictionary named in the path and indenting it to match:
-
-    dictator system/controlDict.run tis 5      ->  Added tis = 5
-    dictator system/controlDict.run endTime 12 ->  Set   endTime = 12
-
-  The path is taken at face value, so "dictator constant/transportProperties rho 10" adds
-  a top-level rho even though water.rho and air.rho exist. Check that a new entry landed
-  where you intended; the Added/Set distinction in the message is there to make an
-  unintended addition, such as a mistyped name, easy to spot. The dictionary named in the
-  path must already exist: "dictator file noSuchDict.x 1" is refused.
-
-  setDictEntry does NOT add by default, and reports a missing entry as an error instead.
-  This is what parmScanner relies on, so that a mistyped parameter name in a parmFile
-  aborts the scan rather than quietly adding a useless entry to every case. Pass -add to
-  setDictEntry for dictator's behaviour; it returns 2 when it added and 0 when it replaced.
-
-  Removing entries is not supported.
-
-  The dictionary dialect is selected by the variable dictSyntax. Only "openfoam" (the
-  default) is currently defined: entries "key value;" and sub-dicts "name { ... }". The
-  dialect is described by six tokens (entry terminator, sub-dict open and close, line
-  comment, block comment open and close), so another brace-and-terminator format is a
-  one-line addition. Formats that express nesting through indentation, such as YAML, do
-  not fit this model.
+  dictator itself is the interactive front end, with tab completion at every position
+  and "-help" documentation for OpenFOAM's parameters. See its README.
 
 
 ================================================================================
