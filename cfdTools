@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# These tools use bash arrays, which are indexed differently in other shells, so
+# parmScanner uses bash arrays, which are indexed differently in other shells, so
 # refuse to be sourced by anything else rather than silently misbehave.
 if [ -z "${BASH_VERSION:-}" ]; then
     echo "cfdTools: requires bash (source it from bash)" >&2
@@ -33,6 +33,11 @@ _CFDTOOLS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # You should have received a copy of the GNU General Public License along with
 # this program. If not, see <https://www.gnu.org/licenses/>.
 
+# parmScanner needs setDictEntry. Take it from whatever the user has already
+# sourced, so a dictator installed anywhere wins; otherwise look for the
+# repository cloned below or beside this one. Failing to find it is fatal rather
+# than deferred, because the alternative is a scan that copies every case and
+# then dies on the first parameter it tries to set.
 if ! declare -F setDictEntry >/dev/null; then
     for _d in "$_CFDTOOLS_DIR/dictator/dictator" \
               "$_CFDTOOLS_DIR/../dictator/dictator"; do
@@ -87,18 +92,18 @@ parmScanner() (
         return 1
     fi
 
-    # Base case to be copied and modified to create test matrix
+    # Defaults for the options parsed below. baseCase and scanName are named on
+    # lines 2 and 1 of the parameter file and are read from there further down,
+    # so the values set here are only ever placeholders.
     baseCase=baseCase
-    # Name of file containing list of parameters to change and values
-    parmScanFile=parmFile
-    # Prefix name of created numbered test cases
     scanName=parmScan
-    # Script to execute in each created case
+    # Parameter file to read, overridden by -file
+    parmScanFile=parmFile
+    # Script to execute in each created case, set by -exec. Empty means create
+    # the cases but run nothing.
     execScript=
-    # Whether to run cases in parallel (background)
-    runParallel=false
-    # Max number of simultaneously running cases
-    maxJobs=0  # 0 means no limit
+    runParallel=false   # -parallel
+    maxJobs=0           # -maxJobs, 0 means no limit
 
     # Parse command line arguments
     while [[ $# -gt 0 ]]; do
@@ -143,13 +148,12 @@ parmScanner() (
         echo "WARNING: -maxJobs has no effect without -parallel" >&2
     fi
 
-    # Reading scan name from 1st line of parm file and making scan directory
+    # Line 1 names the scan, and hence the directory the cases are placed in
     scanNameString=($(sed -n '1p' "$parmScanFile"))
     scanName=${scanNameString[1]}
-    # Making dir for scan cases
     mkdir -p "$scanName"
 
-    # Reading baseCase name from 2nd line of parm file and copying case into scan dir
+    # Line 2 names the case that every scan case is copied from
     baseCaseString=($(sed -n '2p' "$parmScanFile"))
     baseCase=${baseCaseString[1]}
     if [ ! -d "$baseCase" ]; then
@@ -218,7 +222,8 @@ parmScanner() (
                     parmFile=${parmFiles[$m]}
                     parmValue=${caseParms[$m]}
                     echo -n "    $parmName: $parmValue" >> $caseParmFile
-                    # Changing parameter in specified file. Failures must be loud:
+                    # setDictEntry, from dictator, deliberately refuses to add a
+                    # parameter that is not already there. Failures must be loud:
                     # otherwise the case silently keeps the baseCase value while
                     # parmScannerParms claims the requested one.
                     if ! setDictEntry "${caseName}/${parmFile}" "$parmName" "$parmValue"
@@ -274,8 +279,11 @@ parmScanner() (
 )
 
 
-# Function to align columns in parameter file for readability
-# Known limitation: Currently does not respect double quotation
+# Pad the columns of a white space separated file so they line up, rewriting the
+# file in place. Intended for keeping a parmFile readable after rows have been
+# added or edited by hand.
+# Known limitation: does not respect double quotation, so a value containing
+# spaces is treated as several columns and pushed apart.
 
 columnAlign() {
     local input_file="$1"
