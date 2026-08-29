@@ -339,7 +339,15 @@ columnAlign() {
         echo "$formatted_line" >> "$temp_file"
     done < "$input_file"
 
-    mv "$temp_file" "$input_file"
+    # Writing through cat rather than mv keeps the file's mode and ownership; mv
+    # would leave the mktemp file's private 600 in their place. A read-only file
+    # fails here, and that must not be reported as a success.
+    if ! cat "$temp_file" > "$input_file"; then
+        rm -f "$temp_file"
+        echo "Error: could not write $input_file" >&2
+        return 1
+    fi
+    rm -f "$temp_file"
     echo "File $input_file has been aligned successfully."
 }
 
