@@ -7,15 +7,8 @@ Usage:
   Put that line in ~/.bashrc to have the functions available in every terminal.
   cfdTools must be sourced from bash: it uses bash arrays, which other shells index
   differently, so sourcing it from zsh or sh is refused rather than silently
-  misbehaving. No OpenFOAM installation is required.
-
-  parmScanner sets each case's parameters with setDictEntry, which lives in dictator:
-
-    https://github.com/isoAdvector/dictator
-
-  Source dictator before cfdTools, or clone it beside or below this repository and
-  cfdTools will find and source it itself. Without it cfdTools refuses to load and
-  says so.
+  misbehaving. No OpenFOAM installation is required, and nothing beyond bash and awk is
+  needed, except python3 for spreadsheet parameter files.
 
 Contents:
 
@@ -64,7 +57,7 @@ Example of parmFile.csv format:
 
   Line 1 names the scan, and hence the directory the cases are placed in.
   Line 2 names the base case to copy.
-  Line 3 lists the parameters to vary, as full entry paths (see setDictEntry below).
+  Line 3 lists the parameters to vary, as full entry paths (see Parameter paths below).
   Line 4 gives the file each parameter lives in, relative to the case directory.
   Each following line is one case. Use double quotes for values containing spaces.
 
@@ -77,8 +70,8 @@ Notes:
   whether they finished, are still running or crashed. To re-run a case, delete its
   log.<execScript>.
 
-  Parameters are set with setDictEntry, so a case that cannot be given the requested value
-  aborts the scan rather than silently keeping the base case value.
+  A case that cannot be given the requested value aborts the scan rather than silently
+  keeping the base case value.
 
   The scan can be deleted by executing:
 
@@ -112,27 +105,23 @@ Spreadsheets:
 
 
 ================================================================================
-setDictEntry, getDictEntry, listDictEntries
+Parameter paths
 ================================================================================
 
-  These live in dictator, a separate tool:
+  A parameter is named by its full path from the top of its file, with sub-dicts
+  separated by ".". Names containing dots or wildcards are written in double quotes,
+  as in the file. Line 3 of a parameter file could for instance read:
 
-    https://github.com/isoAdvector/dictator
-
-  parmScanner uses setDictEntry to set each case's parameters. Entries are addressed
-  by their full path from the top of the file, with sub-dicts separated by "." :
-
-    setDictEntry system/blockMeshDict nz 160
-    setDictEntry system/fvSchemes ddtSchemes.default "CrankNicolson 0.9"
-    setDictEntry system/fvSolution 'solvers."alpha.water.*".nAlphaSubCycles' 4
+    nz    ddtSchemes.default    PIMPLE.nCorrectors    solvers."alpha.water.*".nAlphaSubCycles
 
   Only the value is rewritten; every other byte of the file is left untouched, so
-  comments, formatting and full floating point precision are preserved. A path that
-  matches no entry, or several, writes nothing and returns non-zero, which is what
-  makes a mistyped parameter name abort a scan rather than quietly do nothing.
+  comments, formatting and full floating point precision are preserved. The parameter
+  must already exist in the base case: a path that matches no entry, or several, aborts
+  the scan, so a mistyped name cannot silently leave the base case value in place.
 
-  dictator itself is the interactive front end, with tab completion at every position
-  and "-help" documentation for OpenFOAM's parameters. See its README.
+  To find the path of a parameter, dictator (https://github.com/isoAdvector/dictator), a
+  separate tool that cfdTools does not need, uses the same paths and offers tab completion
+  of them, and its listDictEntries prints every path in a file.
 
 
 ================================================================================
