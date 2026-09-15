@@ -88,7 +88,22 @@ Notes:
 
     cat myScan/parmScannerParms
 
-  If libreoffice is installed, conveniently edit parmFile.csv with the command
+Spreadsheets:
+  The parameter file may also be a spreadsheet, .ods or .xlsx, laid out the same way with
+  one value per cell, e.g. parmScanner -file parmFile.ods. Only the first sheet is read.
+  This needs python3 but no other software: sheetToParmFile.py, next to cfdTools, does the
+  conversion, and can be run on its own to see what parmScanner will read.
+
+  Cells may hold formulas. Number cells are passed on as their exact value in its shortest
+  form (1e-05, 0.1, 20), whatever number format the cell is displayed with, so there is no
+  need to format cells as text. Text cells are passed on exactly, and need no quotation
+  marks even if they contain spaces. Not allowed, and reported as errors: an empty cell
+  with non-empty cells to its right, spaces in lines 1-4, and double quotes in case values.
+
+  The original spreadsheet is archived in the scan dir as for a text parameter file.
+  Old .xls files cannot be read; save them as .ods or .xlsx.
+
+  A text parameter file can be edited in libreoffice with the command
 
     libreoffice --calc parmFile.csv
 

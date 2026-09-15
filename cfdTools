@@ -148,6 +148,26 @@ parmScanner() (
         echo "WARNING: -maxJobs has no effect without -parallel" >&2
     fi
 
+    # A spreadsheet is converted to the text format once, and everything below
+    # reads the conversion. parmSource is the file the user gave, for messages and
+    # for the archive copy.
+    parmSource="$parmScanFile"
+    case "${parmSource,,}" in
+        *.ods|*.xlsx)
+            if ! command -v python3 >/dev/null; then
+                echo "ERROR: reading $parmSource needs python3" >&2
+                return 1
+            fi
+            parmScanFile=$(mktemp)
+            trap 'rm -f "$parmScanFile"' EXIT
+            python3 "$_CFDTOOLS_DIR/sheetToParmFile.py" "$parmSource" > "$parmScanFile" || return 1
+            ;;
+        *.xls|*.xlsm|*.xlsb)
+            echo "ERROR: cannot read $parmSource. Save it as .ods or .xlsx" >&2
+            return 1
+            ;;
+    esac
+
     # Line 1 names the scan, and hence the directory the cases are placed in
     scanNameString=($(sed -n '1p' "$parmScanFile"))
     scanName=${scanNameString[1]}
@@ -157,22 +177,22 @@ parmScanner() (
     baseCaseString=($(sed -n '2p' "$parmScanFile"))
     baseCase=${baseCaseString[1]}
     if [ ! -d "$baseCase" ]; then
-        echo "ERROR: baseCase '$baseCase' not found (named on line 2 of $parmScanFile)" >&2
+        echo "ERROR: baseCase '$baseCase' not found (named on line 2 of $parmSource)" >&2
         return 1
     fi
     # Archive copies are write-once: a rerun must not nest a new copy inside the
     # existing one, nor overwrite the record of how the scan was originally defined.
     # basename so that -file some/dir/parms.csv still lands inside the scan dir.
     [ -e "${scanName}/${baseCase}.copy" ] || cp -r "$baseCase" "${scanName}/${baseCase}.copy"
-    [ -e "${scanName}/$(basename "$parmScanFile").copy" ] || \
-        cp "$parmScanFile" "${scanName}/$(basename "$parmScanFile").copy"
+    [ -e "${scanName}/$(basename "$parmSource").copy" ] || \
+        cp "$parmSource" "${scanName}/$(basename "$parmSource").copy"
 
     # Reading list of parameters to change
     parmNames=($(sed -n '3p' "$parmScanFile"))
     # For each parameter, which case file is it found in?
     parmFiles=($(sed -n '4p' "$parmScanFile"))
     if [ ${#parmNames[@]} -eq 0 ] || [ ${#parmNames[@]} -ne ${#parmFiles[@]} ]; then
-        echo "ERROR: line 3 of $parmScanFile lists ${#parmNames[@]} parameter name(s) but" >&2
+        echo "ERROR: line 3 of $parmSource lists ${#parmNames[@]} parameter name(s) but" >&2
         echo "       line 4 lists ${#parmFiles[@]} file(s). They must match and be non-empty." >&2
         return 1
     fi
